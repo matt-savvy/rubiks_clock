@@ -14,30 +14,50 @@ export enum ClockFace {
 }
 
 export enum PegValue {
-    Up,
-    Down,
+    Up = 1,
+    Down = 0,
+}
+
+export enum Wheel {
+    Upper = 1,
+    Lower = 0
 }
 
 export enum Direction {
-    Clockwise,
-    CounterClockwise
+    Clockwise = 1,
+    CounterClockwise = -1,
 }
 
-type PuzzleState = [
-    // front, L - R, top to Bottom
+type ClockState<T> = [
+    // front, L - R, top to bottom
     [
-        [ClockFace, ClockFace, ClockFace],
-        [ClockFace, ClockFace, ClockFace],
-        [ClockFace, ClockFace, ClockFace],
+        [T, T, T],
+        [T, T, T],
+        [T, T, T],
     ],
-    // back - R to L, top to Bottom
-    // note, back is R to left as if it's transparent
+    // back, R - L, top to bottom
+    // note, back is mirrored L to R as if you are looking at it
+    // with x-ray vision
     [
-        [ClockFace, ClockFace, ClockFace],
-        [ClockFace, ClockFace, ClockFace],
-        [ClockFace, ClockFace, ClockFace],
+        [T, T, T],
+        [T, T, T],
+        [T, T, T],
     ]
 ]
+type ClockStateFlat<T> = [T, T, T, T, T, T, T, T, T, T, T, T, T, T]
+
+
+
+// convert pegState to a flat list
+// remove pegStates and setPegStates (for now, might want this back for a front end but doubt it. Front end can
+// handle what states the pegs are in and just pass those with any Moves
+
+type AffectedClocks = ClockState<boolean>;
+export type PuzzleState = ClockState<ClockFace>;
+
+export type PuzzleStateFlat = ClockStateFlat<ClockFace>
+
+const solvedStateFlat: PuzzleStateFlat = [12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12]
 
 const solvedState: PuzzleState = [
     // front
@@ -54,7 +74,7 @@ const solvedState: PuzzleState = [
     ]
 ]
 
-type PegState = [
+export type PegState = [
     [PegValue, PegValue],
     [PegValue, PegValue],
 ]
@@ -64,44 +84,19 @@ const defaultPegState: PegState = [
     [PegValue.Up, PegValue.Up],
 ]
 
-export enum Wheel {
-    TopLeft,
-    TopRight,
-    BottomLeft,
-    BottomRight,
-}
-
-// TODO, replace [number, number, number] with a set type
-function getClockFaceFromWheel(wheel: Wheel): [number, number, number] {
-    switch (wheel) {
-        case (Wheel.TopLeft): return [0, 0, 0]
-        case (Wheel.TopRight): return [0, 0, 2]
-        case (Wheel.BottomLeft): return [0, 2, 0]
-        case (Wheel.BottomRight): return [0, 2, 2]
-    }
-}
-
-// TODO, replace [number, number, number] with a set type
-function getPegFromWheel(wheel: Wheel): [number, number] {
-    switch (wheel) {
-        case (Wheel.TopLeft): return [0, 0]
-        case (Wheel.TopRight): return [0, 2]
-        case (Wheel.BottomLeft): return [2, 0]
-        case (Wheel.BottomRight): return [2, 2]
-    }
-}
+const pegTop = 0;
+    const pegBottom = 1;
+    const pegLeft = 0;
+    const pegRight = 1;
 
 /**
  * Return true if the two states are the same
  * @param stateA
  * @param stateB
  */
-export function match(stateA: PuzzleState, stateB: PuzzleState): Boolean {
-    let valuesA = stateA.flat().flat();
-    let valuesB = stateB.flat().flat();
-
-    for (let i = 0; i < valuesA.length; i += 1) {
-        if (valuesA[i] !== valuesB[i]) {
+export function match(stateA: PuzzleStateFlat, stateB: PuzzleStateFlat): Boolean {
+    for (let i = 0; i < stateA.length; i += 1) {
+        if (stateA[i] !== stateB[i]) {
             return false;
         }
     }
@@ -123,7 +118,12 @@ export function turnClock(face: ClockFace, direction: Direction = Direction.Cloc
 
 export type Move = {
     wheel: Wheel,
-    direction: Direction
+    direction: Direction,
+    pegState: PegState
+}
+export type SolveStep = {
+    puzzle: Puzzle,
+    move: Move, // move to get from the last state to this state
 }
 
 function copyPuzzleState(puzzleState: PuzzleState): PuzzleState {
@@ -132,62 +132,146 @@ function copyPuzzleState(puzzleState: PuzzleState): PuzzleState {
     }) as PuzzleState;
 }
 
+function copyPuzzleStateFlat(puzzleState: PuzzleStateFlat): PuzzleStateFlat {
+    return [...puzzleState];
+}
+
 function copyPegState(pegState: PegState): PegState {
     return pegState.map((rows) => {
         return rows.map((peg) => peg)
     }) as PegState;
 }
 
+// row, col of the peg
 export type Peg = [0 | 1, 0 | 1]
 
+function isPuzzleState(obj: any): obj is PuzzleState {
+    if (obj.length == 2) {
+        if (obj[0].length === 3) {
+            if (obj[0][0].length === 3) {
+                return true;
+            }
+        }
+    }
+    return false
+  }
+
+function flatten2dPuzzleState(puzzleState: PuzzleState): PuzzleStateFlat {
+    let flatState = puzzleState.flat().flat();
+    let tempState = flatState.slice(0, 9);
+    tempState = tempState.concat(flatState[10], flatState[12], flatState[13], flatState[14], flatState[16])
+    return tempState as PuzzleStateFlat;
+}
 
 export class Puzzle {
-    private _puzzleState: PuzzleState;
+    private _puzzleState: PuzzleStateFlat;
     private _pegState: PegState;
-    private _seenStates: PuzzleState[] = []
+
+    private _moves: Move[] = [];
+    public maxNumber = 0;
 
     constructor(
-        puzzleState: PuzzleState = solvedState,
+        puzzleState: PuzzleStateFlat | PuzzleState = solvedStateFlat,
         pegState: PegState = defaultPegState,
-        seenStates: PuzzleState[] = []
+        moves: Move[] = [],
     ) {
-        this._puzzleState = copyPuzzleState(puzzleState);
+        if (isPuzzleState(puzzleState)) {
+            this._puzzleState = flatten2dPuzzleState(puzzleState);
+        } else {
+            this._puzzleState = copyPuzzleStateFlat(puzzleState);
+        }
         this._pegState = copyPegState(pegState);
-        this._seenStates = [...seenStates];
+
+        if (moves.length) {
+            this._moves = [...moves];
+        }
+
+        this.maxNumber = this.getMaxNumber();
     }
 
+    public get puzzleState(): PuzzleStateFlat {
+        return copyPuzzleStateFlat(this._puzzleState);
+    }
 
-    public get puzzleState(): PuzzleState {
-        return copyPuzzleState(this._puzzleState);
+    public get puzzleState2d(): PuzzleState {
+        const [
+            topLeft,
+            topCenter,
+            topRight,
+            middleLeft,
+            center,
+            middleRight,
+            bottomLeft,
+            bottomCenter,
+            bottomRight,
+            backTopCenter,
+            backMiddleLeft,
+            backCenter,
+            backMiddleRight,
+            backBottomCenter
+        ] = this._puzzleState;
+
+        // used to get the back value for corners
+        function getBackValue(value: ClockFace): ClockFace {
+            if (value === ClockFace.Twelve) {
+                return value;
+            }
+
+            return 12 - value;
+        }
+
+        const backTopLeft = getBackValue(topLeft);
+        const backTopRight = getBackValue(topRight);
+        const backBottomLeft = getBackValue(bottomLeft);
+        const backBottomRight = getBackValue(bottomRight);
+        return [
+            [
+                [topLeft, topCenter, topRight],
+                [middleLeft, center, middleRight],
+                [bottomLeft, bottomCenter, bottomRight],
+            ],
+            [
+                [backTopLeft, backTopCenter, backTopRight],
+                [backMiddleLeft, backCenter, backMiddleRight],
+                [backBottomLeft, bottomCenter, backBottomRight],
+            ]
+        ]
     }
 
     public get pegState(): PegState {
         return copyPegState(this._pegState);
     }
 
-    //
-    public scramble() {
-        let scrambledState = this.puzzleState;
-        scrambledState[0][0][0] = ClockFace.One;
-
-        return new Puzzle(scrambledState, this.pegState, this._seenStates);
+    public get moves(): Move[] {
+        return [...this._moves];
     }
 
-    public setPegs(pegs: Peg[]) {
-        let pegState = this.pegState;
-        pegs.forEach(([row, col]) => {
-            const value = pegState[row][col];
-            pegState[row][col] = togglePeg(value);
-        })
+    public get lastMove(): Move | null {
+        if (this._moves.length) {
+            return this._moves[this._moves.length - 1];
+        }
 
-        return new Puzzle(this.puzzleState, pegState, this._seenStates);
+        return null
+    }
+
+    // TODO
+    public scramble() {
+        let scrambledState = this.puzzleState;
+        scrambledState[0] = ClockFace.One;
+
+        return new Puzzle(scrambledState);
+    }
+
+    public setPegs(pegState: PegState): Puzzle {
+        return new Puzzle(
+            this._puzzleState,
+            pegState,
+        )
     }
 
     public get isSolved(): Boolean {
-        let puzzleStateFlat = this.puzzleState.flat().flat();
-
-        for (let i = 0; i < puzzleStateFlat.length; i += 1) {
-            let face = puzzleStateFlat[i];
+        for (let i = 0; i < this._puzzleState.length; i += 1) {
+            let face = this._puzzleState[i];
             if (face !== ClockFace.Twelve) {
                 return false;
             }
@@ -196,75 +280,303 @@ export class Puzzle {
         return true;
     }
 
-    /* public getAvailableMoves() {
-        return all possible moves we can make,
-        eg [ [Wheel.TopLeft, Direction.Clockwise], [Wheel.TopLeft, Direction.CounterClockwise]]
-    }
-    */
+    private getMaxNumber(): number {
+        let counter: Record<number, number> = {}
+        for (let i = 0; i < this.puzzleState.length; i += 1) {
+            let value = this.puzzleState[i];
 
-    /*
-    private moveTree() {
-        // where are we now?
-        // if we aren't solved
-        // - for all possible peg combos
-        //   - get available moves
-        //   - for all available moves
-        //       - add them underneath us on the tree
-        //
-
-    }
-    */
-
-    // private _solution []
-
-    public makeMove({ wheel, direction }: Move): Puzzle {
-
-        const center = 1;
-        const middle = 1;
-
-        let updatedSeenStates = [...this._seenStates, this._puzzleState];
-
-        let newPuzzleState = this.puzzleState;
-        const [face, row, col] = getClockFaceFromWheel(wheel);
-
-        newPuzzleState[face][row][col] = turnClock(newPuzzleState[face][row][col]);
-        // rotate the matching backFace
-        newPuzzleState[flip(face)][row][col] = turnClock(newPuzzleState[flip(face)][row][col], Direction.CounterClockwise);;
-
-        const [pegRow, pegCol] = getPegFromWheel(wheel);
-        if (this.pegState[pegRow][pegCol] === PegValue.Up) {
-            // also rotate the center clock on that row
-            newPuzzleState[face][row][center] = turnClock(newPuzzleState[face][row][center]);
-
-            // also rotate the middle clock on that ccol
-            newPuzzleState[face][middle][col] = turnClock(newPuzzleState[face][middle][col]);
-        } else {
-            // also rotate the BACK center clock on that row
-            newPuzzleState[flip(face)][row][center] = turnClock(newPuzzleState[flip(face)][row][center], Direction.CounterClockwise);
-            // also rotate the BACK middle clock on that col
-            newPuzzleState[flip(face)][middle][col] = turnClock(newPuzzleState[flip(face)][middle][col], Direction.CounterClockwise);
+            if (counter[value]) {
+                counter[value] = counter[value] + 1
+            } else {
+                counter[value] = 1;
+            }
         }
+
+        return Math.max(...Object.values(counter));
+    }
+
+    public getAffectedClocks(wheel: Wheel): ClockStateFlat<number> {
+        // indexes
+        const topLeft = 0;
+        const topCenter = 1;
+        const topRight = 2;
+        const middleLeft = 3;
+        const center = 4;
+        const middleRight = 5;
+        const bottomLeft = 6;
+        const bottomCenter = 7;
+        const bottomRight = 8;
+        const backTopCenter = 9;
+        const backMiddleLeft = 10;
+        const backCenter = 11;
+        const backMiddleRight = 12;
+        const backBottomCenter = 13;
+
+        let pegValue: PegValue;
+
+        if (wheel === Wheel.Upper) {
+            pegValue = PegValue.Up;
+        } else {
+            pegValue = PegValue.Down;
+        }
+
+        let affectedClocks = new Array<number>(14) as ClockStateFlat<number>;
+        affectedClocks.fill(0);
+
+        if (this.pegState[pegTop][pegLeft] === pegValue) {
+            affectedClocks[topLeft] = 1;
+
+            if (pegValue === PegValue.Up) {
+                affectedClocks[topCenter] = 1;
+                affectedClocks[middleLeft] = 1;
+                affectedClocks[center] = 1;
+            } else {
+                affectedClocks[backTopCenter] = -1;
+                affectedClocks[backMiddleLeft] = -1;
+                affectedClocks[backCenter] = -1;
+            }
+        }
+
+        if (this.pegState[pegTop][pegRight] === pegValue) {
+            affectedClocks[topRight] = 1;
+
+            if (pegValue === PegValue.Up) {
+                affectedClocks[topCenter] = 1;
+                affectedClocks[middleRight] = 1;
+                affectedClocks[center] = 1;
+            } else {
+                affectedClocks[backTopCenter] = -1;
+                affectedClocks[backCenter] = -1;
+                affectedClocks[backMiddleRight] = -1;
+            }
+
+        }
+
+        if (this.pegState[pegBottom][pegLeft] === pegValue) {
+            affectedClocks[bottomLeft] = 1;
+
+            if (pegValue === PegValue.Up) {
+                affectedClocks[bottomCenter] = 1;
+                affectedClocks[middleLeft] = 1;
+                affectedClocks[center] = 1;
+            } else {
+                affectedClocks[backMiddleLeft] = -1;
+                affectedClocks[backCenter] = 1;
+                affectedClocks[backBottomCenter] = 1;
+            }
+        }
+
+        if (this.pegState[pegBottom][pegRight] === pegValue) {
+            affectedClocks[bottomRight] = 1;
+
+            if (pegValue === PegValue.Up) {
+                affectedClocks[bottomCenter] = 1;
+                affectedClocks[middleRight] = 1;
+                affectedClocks[center] = 1;
+            } else {
+                affectedClocks[backBottomCenter] = -1;
+                affectedClocks[backCenter] = -1;
+                affectedClocks[backMiddleRight] = -1;
+            }
+
+        }
+
+        return affectedClocks
+    }
+
+    public makeMove(move: Move): Puzzle {
+        const { wheel, direction, pegState = this.pegState } = move;
+        // do nothing for impossible puzzle moves
+        if (
+            (pegState[pegTop][pegLeft] === PegValue.Up) &&
+            (pegState[pegTop][pegRight] === PegValue.Up) &&
+            (pegState[pegBottom][pegLeft] === PegValue.Up) &&
+            (pegState[pegTop][pegRight] === PegValue.Up) &&
+            (wheel === Wheel.Lower)
+        ) {
+            // Lower turn when all sides are Up
+            return this;
+        } else if (
+            (pegState[pegTop][pegLeft] === PegValue.Down) &&
+            (pegState[pegTop][pegRight] === PegValue.Down) &&
+            (pegState[pegBottom][pegLeft] === PegValue.Down) &&
+            (pegState[pegTop][pegRight] === PegValue.Down) &&
+            (wheel === Wheel.Upper)
+        ) {
+            // Upper turn when all sides are Down
+            return this;
+        }
+
+        let updatedMoves = [...this.moves, move];
+
+        this._pegState = copyPegState(pegState);
+
+        let affectedClocks = this.getAffectedClocks(wheel);
+
+        let newPuzzleState = this.puzzleState.map((face, index) => {
+            if (affectedClocks[index] !== 0) {
+                let directionToTurn = direction * affectedClocks[index];
+                return turnClock(face, directionToTurn);
+            }
+            return face;
+        }) as PuzzleStateFlat;
 
         return new Puzzle(
             newPuzzleState,
-            this.pegState,
-            updatedSeenStates,
+            pegState,
+            updatedMoves,
         )
     }
 
-}
-export type coords = [number, number, number]
-function getBackCoords([ face, row, col ]: coords): coords {
-    return [flip(face), row, col];
+    /**
+     * Get all possible next puzzles reachable in one turn
+     */
+    public getNextPuzzles(): Puzzle[] {
+        let nextStates = availableMoves.map((move) => {
+            return this.makeMove(move);
+        });
+
+        return nextStates;
+    }
+
 }
 
-function flip(face: number): number {
-    return face === 0 ? 1 : 0;
+/**
+ * Return all available moves from this position
+ */
+function getAvailableMoves(): Move[] {
+    const wheels = [Wheel.Upper, Wheel.Lower];
+    const directions = [Direction.Clockwise, Direction.CounterClockwise];
+    let availableMoves: Move[] = [];
+
+    let allPegStates = getAllPegStates();
+
+    getAllPegStates().forEach((pegState) => {
+        wheels.forEach((wheel) => {
+            directions.forEach((direction) => {
+                let move = {
+                    wheel,
+                    direction,
+                    pegState,
+                }
+
+                availableMoves.push(move);
+            });
+        })
+    });
+
+    return availableMoves;
 }
 
+export const availableMoves = getAvailableMoves();
 
-function togglePeg(value: PegValue): PegValue {
-    return (value === PegValue.Up) ? PegValue.Down : PegValue.Up;
+// gets all possible pegStates
+export function getAllPegStates() {
+    let allPegStates: PegState[] = [];
+
+    const pegValues = [PegValue.Up, PegValue.Down];
+    let pegState = [[PegValue.Up, null], [PegValue.Up, null]]
+    let pegIndexes = [
+        [0, 0],
+        [0, 1],
+        [1, 0],
+        [1, 1]
+    ]
+
+    pegValues.forEach((pegValueTopLeft) => {
+        pegValues.forEach((pegValueTopRight) => {
+            pegValues.forEach((pegValueBottomLeft) => {
+                pegValues.forEach((pegValueBottomRight) => {
+                    let pegState = copyPegState(defaultPegState);
+
+                    pegState[pegTop][pegLeft] = pegValueTopLeft;
+                    pegState[pegTop][pegRight] = pegValueTopRight;
+                    pegState[pegBottom][pegLeft] = pegValueBottomLeft;
+                    pegState[pegBottom][pegRight] = pegValueBottomRight;
+
+                    allPegStates.push(pegState);
+                });
+            });
+        });
+    });
+
+    return allPegStates;
+}
+
+function isUnseenPuzzle(puzzle: Puzzle, seenStates: PuzzleStateFlat[]): Boolean {
+    // use for loop instead of forEach loop so we can bail out early
+    for (let i = 0; i < seenStates.length; i += 1) {
+        let seenState = seenStates[i];
+        if (match(seenState, puzzle.puzzleState)) {
+            return false;
+        };
+    }
+
+    return true
+}
+
+function sortBySameFaces(puzzleA: Puzzle, puzzleB: Puzzle): number {
+    let maxNumberA = puzzleA.maxNumber;
+    let maxNumberB = puzzleB.maxNumber
+
+    if (maxNumberA < maxNumberB) {
+        return 1
+    } else if (maxNumberA > maxNumberB) {
+        return -1
+    }
+
+    return 0
+}
+
+export function prioritizePuzzles(puzzles: Puzzle[]): Puzzle[] {
+    // console.log('prioritizePuzzles, puzzles.length ', puzzles.length)
+    return puzzles.sort(sortBySameFaces);
+}
+
+export function solvePuzzle(puzzle: Puzzle): Puzzle {
+    let puzzleQueue: Puzzle[] = [puzzle]
+    let seenStates: PuzzleStateFlat[] = [puzzle.puzzleState];
+    let seenStateCounter = 0;
+    let currentPuzzle = puzzle;
+    let maxMaxNumber = 1;
+    let counter = 0;
+
+    while (puzzleQueue.length) {
+        if (counter % 1000 === 0) {
+            console.log(`puzzleQueue.length ${puzzleQueue.length}`);
+        }
+
+        counter += 1;
+        currentPuzzle = puzzleQueue.shift() as Puzzle;
+
+        if (currentPuzzle.isSolved) {
+            // we're done here
+            console.log("counter", counter);
+            return currentPuzzle;
+        };
+
+        seenStates.push(currentPuzzle.puzzleState);
+
+        if (counter < 2 ** 13) {
+            let nextPuzzles = currentPuzzle.getNextPuzzles();
+
+            nextPuzzles.forEach((nextPuzzle) => {
+                if (isUnseenPuzzle(nextPuzzle, seenStates)) {
+                    if (nextPuzzle.maxNumber >= maxMaxNumber) {
+                        // console.log(`new maxMaxNumber of ${maxMaxNumber}`);
+                        maxMaxNumber = nextPuzzle.maxNumber;
+                        puzzleQueue.unshift(nextPuzzle);
+                    } else {
+                        puzzleQueue.push(nextPuzzle);
+                    }
+                } else {
+                    seenStateCounter += 1;
+                }
+            });
+        }
+    }
+
+    return currentPuzzle;
 }
 
 // start with whatever wheel you turned

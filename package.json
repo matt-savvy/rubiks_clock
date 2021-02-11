@@ -1,7 +1,7 @@
 {
   "name": "clock",
   "version": "1.0.0",
-  "description": "",
+  "description": "Rubik's Clock",
   "main": "index.js",
   "scripts": {
     "test": "jest tests"

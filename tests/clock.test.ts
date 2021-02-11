@@ -1,4 +1,4 @@
-import { availableMoves, prioritizePuzzles, PuzzleState, solvePuzzle, getAllPegStates, ClockFace, Puzzle, Peg, PegState, PegValue, match, turnClock, Direction, Wheel } from '../src/clock';
+import { Move, availableMoves, PuzzleState, solvePuzzle, getAllPegStates, ClockFace, Puzzle, Peg, PegState, PegValue, match, turnClock, Direction, Wheel } from '../src/clock';
 
 describe('Puzzle', () => {
     describe('.isSolved', () => {
@@ -25,6 +25,29 @@ describe('Puzzle', () => {
             ])
         })
     })
+
+    describe('.score', () => {
+        it('should be x, y, z', () => {
+            let puzzle = new Puzzle([
+                [
+                    [1, 2, 3],
+                    [4, 5, 6],
+                    [7, 8, 9],
+                ],
+                [
+                    [1, 2, 3],
+                    [4, 2, 6],
+                    [7, 8, 9],
+                ],
+            ]);
+            expect(puzzle.score).toEqual({
+                frontCross: 3 + 1 + 1 + 3,
+                backCross: 0 + 2 + 4 + 6,
+                corners: 4 + 2 + 2 + 4,
+            })
+        })
+    })
+
     describe('.setPegs', () => {
         it('should be dd, dd', () => {
             let puzzle = new Puzzle();
@@ -233,6 +256,7 @@ describe('getAffectedClocks', () => {
 
         expect(affectedClocks).toEqual([1, 1, 0, 1, 1, 0, 1, 1, 0, 0, 0, 0 ,0, 0])
     })
+
 })
 
 describe('getAllPegStates', () => {
@@ -242,10 +266,10 @@ describe('getAllPegStates', () => {
 })
 
 describe('solvePuzzle', () => {
-    it('should work', () => {
+    it('should work with an already solved puzzle', () => {
         let puzzle = new Puzzle();
 
-        // puzzle = solvePuzzle(puzzle);
+        puzzle = solvePuzzle(puzzle);
         expect(puzzle.isSolved).toBe(true)
     })
 
@@ -279,7 +303,7 @@ describe('solvePuzzle', () => {
         ])
     })
 
-    it.only('should work with an unsolved puzzle three moves away', () => {
+    it('should work with an unsolved puzzle three moves away', () => {
         let puzzle = new Puzzle([
             [
                 [2, 3, 3],
@@ -333,82 +357,43 @@ describe('solvePuzzle', () => {
         ])
     })
 
-    it('should work with an unsolved puzzle multiple moves away', () => {
+    it('should work with an unsolved puzzle 4 moves away', () => {
+        let puzzle = new Puzzle()
+        let moves = getRandomMoves(4);
 
-        let puzzle = new Puzzle([
-            [
-                [8, 9, 9],
-                [9, 9, 9],
-                [9, 9, 9],
-            ],
-            [
-                [4, 12, 3],
-                [1, 12, 11],
-                [3, 11, 3],
-            ]
-        ]);
+        moves.forEach((move) => {
+            puzzle = puzzle.makeMove(move);
+        })
+
+        puzzle = solvePuzzle(puzzle);
+
+        expect(puzzle.isSolved).toBe(true);
+    })
+
+
+    it.only('should work with an unsolved puzzle multiple moves away', () => {
+        let puzzle = new Puzzle();
+
+        let nMoves = Math.floor(5 + Math.random() * 12);
+        let moves = getRandomMoves(nMoves);
+        moves.forEach((move) => {
+            puzzle = puzzle.makeMove(move);
+        })
 
         puzzle = solvePuzzle(puzzle);
         expect(puzzle.isSolved).toBe(true);
-
-        expect(puzzle.moves).toEqual([
-            {
-                wheel: Wheel.Upper,
-                direction: Direction.Clockwise,
-                pegState: [
-                    [ PegValue.Up, PegValue.Up ],
-                    [ PegValue.Up, PegValue.Up ]
-                ]
-            },
-            {
-                wheel: Wheel.Upper,
-                direction: Direction.Clockwise,
-                pegState: [
-                    [ PegValue.Up, PegValue.Up ],
-                    [ PegValue.Up, PegValue.Up ]
-                ]
-            },
-            {
-                wheel: Wheel.Upper,
-                direction: Direction.Clockwise,
-                pegState: [
-                    [ PegValue.Up, PegValue.Up ],
-                    [ PegValue.Up, PegValue.Up ]
-                ]
-            },
-        ])
+        console.log(`${puzzle.moves.length} moves to solve ${moves.length} moves`);
     })
 
 })
 
-describe('prioritizeSolutions', () => {
-    let puzzleSimilar = new Puzzle([
-        [
-            [3, 3, 3],
-            [3, 3, 3],
-            [3, 3, 3],
-        ],
-        [
-            [9, 12, 9],
-            [12, 12, 12],
-            [9, 12, 9],
-        ]
-    ]);
-    let puzzleDifferent = new Puzzle([
-        [
-            [2, 12, 4],
-            [8, 11, 3],
-            [12, 11, 5],
-        ],
-        [
-            [10, 12, 8],
-            [9, 9, 9],
-            [7, 9, 12],
-        ]
-    ]);
-
-    it('should work', () => {
-        let puzzles = [puzzleDifferent, puzzleSimilar];
-        expect(prioritizePuzzles(puzzles)).toEqual([puzzleSimilar, puzzleDifferent]);
-    })
-})
+function getRandomMoves(nMoves: number): Move[] {
+    let moves = new Array<Move>(nMoves);
+    // randomly grab nMoves moves
+    for (let i=0; i < nMoves; i += 1) {
+        let randomIndex = Math.floor(Math.random() * availableMoves.length);
+        let newMove = availableMoves[randomIndex];
+        moves[i] = newMove;
+    }
+    return moves;
+}

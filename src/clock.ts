@@ -46,7 +46,25 @@ type ClockState<T> = [
 ]
 type ClockStateFlat<T> = [T, T, T, T, T, T, T, T, T, T, T, T, T, T]
 
+/*
+-- rolling priority queue and seenStates together
+  -- e.g we maybe will end up evaluating a state that we've seen before, but the Puzzle we're looking at got there with less
+  moves than the Puzzle with the same seenState we already have in our set
+  --
 
+-- end game tables
+  - calculate all the positions that are 1, 2, 3, and maybe even 4 moves away from being solved, precalculate all of them
+  - the same way we check "is puzzle solved?" we can also check "is the state in the solved states list?"
+*/
+//
+
+// symmetrical states?
+  // we could theoertically halve the search space if this is applicable
+  // get the puzzle state that represents the same clock but as if we started on the back face
+  // might need a way to transpose moves from a symmetrical state,
+      // reversing something L-R means that the pins that were up and down will switch
+      // same with up and down
+      // same with front / back / and wheels
 
 // convert pegState to a flat list
 // remove pegStates and setPegStates (for now, might want this back for a front end but doubt it. Front end can
@@ -163,12 +181,17 @@ function flatten2dPuzzleState(puzzleState: PuzzleState): PuzzleStateFlat {
     return tempState as PuzzleStateFlat;
 }
 
+interface Score {
+    frontCross: number,
+    backCross: number,
+    corners: number
+}
+
 export class Puzzle {
     private _puzzleState: PuzzleStateFlat;
     private _pegState: PegState;
-
     private _moves: Move[] = [];
-    public maxNumber = 0;
+    private _score: Score;
 
     constructor(
         puzzleState: PuzzleStateFlat | PuzzleState = solvedStateFlat,
@@ -185,8 +208,8 @@ export class Puzzle {
         if (moves.length) {
             this._moves = [...moves];
         }
+        this._score = this.calculateScore();
 
-        this.maxNumber = this.getMaxNumber();
     }
 
     public get puzzleState(): PuzzleStateFlat {
@@ -211,15 +234,6 @@ export class Puzzle {
             backBottomCenter
         ] = this._puzzleState;
 
-        // used to get the back value for corners
-        function getBackValue(value: ClockFace): ClockFace {
-            if (value === ClockFace.Twelve) {
-                return value;
-            }
-
-            return 12 - value;
-        }
-
         const backTopLeft = getBackValue(topLeft);
         const backTopRight = getBackValue(topRight);
         const backBottomLeft = getBackValue(bottomLeft);
@@ -237,10 +251,54 @@ export class Puzzle {
             ]
         ]
     }
+    public get puzzleStateString(): string {
+        return this._puzzleState.toString()
+    }
 
     public get pegState(): PegState {
         return copyPegState(this._pegState);
     }
+
+    public get score(): Score {
+        return this._score;
+    }
+
+    private calculateScore(): Score {
+        let score: Score = {
+            frontCross: 0,
+            backCross: 0,
+            corners: 0
+        }
+
+        const frontEdges = [topCenter, middleLeft, middleRight, bottomCenter];
+        const centerFace = this._puzzleState[center];
+
+        frontEdges.forEach((stateIndex) => {
+            let face = this._puzzleState[stateIndex];
+            let distance = Math.abs(centerFace - face);
+            score.frontCross += distance;
+        });
+
+        const backEdges = [backTopCenter, backMiddleLeft, backMiddleRight, backBottomCenter];
+        const backCenterFace = this._puzzleState[backCenter];
+
+        backEdges.forEach((stateIndex) => {
+            let face = this._puzzleState[stateIndex];
+            let distance = Math.abs(backCenterFace - face);
+            score.backCross += distance;
+        });
+
+        const corners = [topLeft, topRight, bottomLeft, bottomRight];
+
+        corners.forEach((stateIndex) => {
+            let face = this._puzzleState[stateIndex];
+            let distance = Math.abs(centerFace - face);
+            score.corners += distance;
+        });
+
+        return score
+    }
+
 
     public get moves(): Move[] {
         return [...this._moves];
@@ -280,38 +338,7 @@ export class Puzzle {
         return true;
     }
 
-    private getMaxNumber(): number {
-        let counter: Record<number, number> = {}
-        for (let i = 0; i < this.puzzleState.length; i += 1) {
-            let value = this.puzzleState[i];
-
-            if (counter[value]) {
-                counter[value] = counter[value] + 1
-            } else {
-                counter[value] = 1;
-            }
-        }
-
-        return Math.max(...Object.values(counter));
-    }
-
     public getAffectedClocks(wheel: Wheel): ClockStateFlat<number> {
-        // indexes
-        const topLeft = 0;
-        const topCenter = 1;
-        const topRight = 2;
-        const middleLeft = 3;
-        const center = 4;
-        const middleRight = 5;
-        const bottomLeft = 6;
-        const bottomCenter = 7;
-        const bottomRight = 8;
-        const backTopCenter = 9;
-        const backMiddleLeft = 10;
-        const backCenter = 11;
-        const backMiddleRight = 12;
-        const backBottomCenter = 13;
-
         let pegValue: PegValue;
 
         if (wheel === Wheel.Upper) {
@@ -503,85 +530,107 @@ export function getAllPegStates() {
     return allPegStates;
 }
 
-function isUnseenPuzzle(puzzle: Puzzle, seenStates: PuzzleStateFlat[]): Boolean {
-    // use for loop instead of forEach loop so we can bail out early
-    for (let i = 0; i < seenStates.length; i += 1) {
-        let seenState = seenStates[i];
-        if (match(seenState, puzzle.puzzleState)) {
-            return false;
-        };
-    }
-
-    return true
+function getMinMax(score: Score): [number, number] {
+    const min = Math.min(score.frontCross, score.backCross);
+    const max = Math.max(score.frontCross, score.backCross);
+    return [min, max];
 }
 
-function sortBySameFaces(puzzleA: Puzzle, puzzleB: Puzzle): number {
-    let maxNumberA = puzzleA.maxNumber;
-    let maxNumberB = puzzleB.maxNumber
+function prioritizePuzzleQueue(puzzleQueue: Puzzle[]): Puzzle[] {
+    return puzzleQueue.sort((a, b) => {
 
-    if (maxNumberA < maxNumberB) {
-        return 1
-    } else if (maxNumberA > maxNumberB) {
-        return -1
-    }
+        const [minCrossA, maxCrossA] = getMinMax(a.score);
+        const [minCrossB, maxCrossB] = getMinMax(b.score);
 
-    return 0
+        if (minCrossA !== minCrossB) {
+            return minCrossA < minCrossB ? -1 : 1;
+        }
+
+        if (maxCrossA !== maxCrossB) {
+            return maxCrossA < maxCrossB ? -1 : 1;
+        }
+
+        return a.score.corners < b.score.corners ? -1 : 1;
+    })
 }
 
-export function prioritizePuzzles(puzzles: Puzzle[]): Puzzle[] {
-    // console.log('prioritizePuzzles, puzzles.length ', puzzles.length)
-    return puzzles.sort(sortBySameFaces);
+function isUnseenPuzzle(puzzle: Puzzle, seenStates: Set<string>): boolean {
+    return seenStates.has(puzzle.puzzleStateString) === false;
 }
 
 export function solvePuzzle(puzzle: Puzzle): Puzzle {
+    if (puzzle.isSolved) {
+        return puzzle;
+    }
+
     let puzzleQueue: Puzzle[] = [puzzle]
-    let seenStates: PuzzleStateFlat[] = [puzzle.puzzleState];
-    let seenStateCounter = 0;
+    let seenStates = new Set<string>();
     let currentPuzzle = puzzle;
-    let maxMaxNumber = 1;
+
     let counter = 0;
 
     while (puzzleQueue.length) {
-        if (counter % 1000 === 0) {
-            console.log(`puzzleQueue.length ${puzzleQueue.length}`);
-        }
-
         counter += 1;
         currentPuzzle = puzzleQueue.shift() as Puzzle;
 
-        if (currentPuzzle.isSolved) {
-            // we're done here
-            console.log("counter", counter);
-            return currentPuzzle;
-        };
+        seenStates.add(currentPuzzle.puzzleStateString);
 
-        seenStates.push(currentPuzzle.puzzleState);
-
-        if (counter < 2 ** 13) {
+        if (counter < 2 ** 12) {
             let nextPuzzles = currentPuzzle.getNextPuzzles();
 
-            nextPuzzles.forEach((nextPuzzle) => {
+            for (let i = 0; i < nextPuzzles.length; i += 1) {
+                let nextPuzzle = nextPuzzles[i];
+
+                if (nextPuzzle.isSolved) {
+                    // we're done here
+                    // console.log(`solved after looking at ${counter} positions`);
+                    return nextPuzzle;
+                };
+
                 if (isUnseenPuzzle(nextPuzzle, seenStates)) {
-                    if (nextPuzzle.maxNumber >= maxMaxNumber) {
-                        // console.log(`new maxMaxNumber of ${maxMaxNumber}`);
-                        maxMaxNumber = nextPuzzle.maxNumber;
-                        puzzleQueue.unshift(nextPuzzle);
-                    } else {
-                        puzzleQueue.push(nextPuzzle);
-                    }
-                } else {
-                    seenStateCounter += 1;
+                    puzzleQueue.push(nextPuzzle);
                 }
-            });
+
+            }
+
+            // resort queue
+            let startTime = performance.now();
+            puzzleQueue = prioritizePuzzleQueue(puzzleQueue);
+            let endTime = performance.now();
+            if (endTime - startTime > 1) {
+                // console.log(`puzzleQueue.length ${puzzleQueue.length}, time: ${endTime - startTime}ms`);
+            }
+
+
         }
     }
+
+    console.log('could not solved, counter', counter);
 
     return currentPuzzle;
 }
 
-// start with whatever wheel you turned
-   // is the matching peg Up?
-     // yes? add the center, matching col and matching row
-     // no? add
-   // is the same row peg Up?
-     //
+        // indexes
+        const topLeft = 0;
+        const topCenter = 1;
+        const topRight = 2;
+        const middleLeft = 3;
+        const center = 4;
+        const middleRight = 5;
+        const bottomLeft = 6;
+        const bottomCenter = 7;
+        const bottomRight = 8;
+        const backTopCenter = 9;
+        const backMiddleLeft = 10;
+        const backCenter = 11;
+        const backMiddleRight = 12;
+        const backBottomCenter = 13;
+
+// used to get the back value for corners
+function getBackValue(value: ClockFace): ClockFace {
+    if (value === ClockFace.Twelve) {
+        return value;
+    }
+
+    return 12 - value;
+}

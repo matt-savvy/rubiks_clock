@@ -13,7 +13,7 @@ export enum ClockFace {
     Twelve
 }
 
-export enum PegValue {
+export enum Peg {
     Up = 1,
     Down = 0,
 }
@@ -55,7 +55,18 @@ type ClockStateFlat<T> = [T, T, T, T, T, T, T, T, T, T, T, T, T, T]
 -- end game tables
   - calculate all the positions that are 1, 2, 3, and maybe even 4 moves away from being solved, precalculate all of them
   - the same way we check "is puzzle solved?" we can also check "is the state in the solved states list?"
-*/
+
+--- humanizeMoves
+  - make a map of all the pegStates
+    - each maps a stringified peg state to UL, UR, DL, DR, U, L, D, R or ALL
+  - put moves together so that maybe four turns in the same direction could just be written UUUd, U+4
+
+
+
+  */
+
+
+
 //
 
 // symmetrical states?
@@ -93,19 +104,11 @@ const solvedState: PuzzleState = [
 ]
 
 export type PegState = [
-    [PegValue, PegValue],
-    [PegValue, PegValue],
+    Peg, Peg,
+    Peg, Peg,
 ]
 
-const defaultPegState: PegState = [
-    [PegValue.Up, PegValue.Up],
-    [PegValue.Up, PegValue.Up],
-]
-
-const pegTop = 0;
-    const pegBottom = 1;
-    const pegLeft = 0;
-    const pegRight = 1;
+const defaultPegState: PegState = [Peg.Up, Peg.Up, Peg.Up, Peg.Up]
 
 /**
  * Return true if the two states are the same
@@ -155,13 +158,8 @@ function copyPuzzleStateFlat(puzzleState: PuzzleStateFlat): PuzzleStateFlat {
 }
 
 function copyPegState(pegState: PegState): PegState {
-    return pegState.map((rows) => {
-        return rows.map((peg) => peg)
-    }) as PegState;
+    return [...pegState]
 }
-
-// row, col of the peg
-export type Peg = [0 | 1, 0 | 1]
 
 function isPuzzleState(obj: any): obj is PuzzleState {
     if (obj.length == 2) {
@@ -189,13 +187,11 @@ interface Score {
 
 export class Puzzle {
     private _puzzleState: PuzzleStateFlat;
-    private _pegState: PegState;
     private _moves: Move[] = [];
     private _score: Score;
 
     constructor(
         puzzleState: PuzzleStateFlat | PuzzleState = solvedStateFlat,
-        pegState: PegState = defaultPegState,
         moves: Move[] = [],
     ) {
         if (isPuzzleState(puzzleState)) {
@@ -203,7 +199,6 @@ export class Puzzle {
         } else {
             this._puzzleState = copyPuzzleStateFlat(puzzleState);
         }
-        this._pegState = copyPegState(pegState);
 
         if (moves.length) {
             this._moves = [...moves];
@@ -253,10 +248,6 @@ export class Puzzle {
     }
     public get puzzleStateString(): string {
         return this._puzzleState.toString()
-    }
-
-    public get pegState(): PegState {
-        return copyPegState(this._pegState);
     }
 
     public get score(): Score {
@@ -320,13 +311,6 @@ export class Puzzle {
         return new Puzzle(scrambledState);
     }
 
-    public setPegs(pegState: PegState): Puzzle {
-        return new Puzzle(
-            this._puzzleState,
-            pegState,
-        )
-    }
-
     public get isSolved(): Boolean {
         for (let i = 0; i < this._puzzleState.length; i += 1) {
             let face = this._puzzleState[i];
@@ -338,22 +322,24 @@ export class Puzzle {
         return true;
     }
 
-    public getAffectedClocks(wheel: Wheel): ClockStateFlat<number> {
-        let pegValue: PegValue;
+    public getAffectedClocks(wheel: Wheel, pegState: PegState): ClockStateFlat<number> {
+        let pegValue: Peg;
+
+        const [pegTopLeft, pegTopRight, pegBottomLeft, pegBottomRight] = pegState;
 
         if (wheel === Wheel.Upper) {
-            pegValue = PegValue.Up;
+            pegValue = Peg.Up;
         } else {
-            pegValue = PegValue.Down;
+            pegValue = Peg.Down;
         }
 
         let affectedClocks = new Array<number>(14) as ClockStateFlat<number>;
         affectedClocks.fill(0);
 
-        if (this.pegState[pegTop][pegLeft] === pegValue) {
+        if (pegTopLeft === pegValue) {
             affectedClocks[topLeft] = 1;
 
-            if (pegValue === PegValue.Up) {
+            if (pegValue === Peg.Up) {
                 affectedClocks[topCenter] = 1;
                 affectedClocks[middleLeft] = 1;
                 affectedClocks[center] = 1;
@@ -364,10 +350,10 @@ export class Puzzle {
             }
         }
 
-        if (this.pegState[pegTop][pegRight] === pegValue) {
+        if (pegTopRight === pegValue) {
             affectedClocks[topRight] = 1;
 
-            if (pegValue === PegValue.Up) {
+            if (pegValue === Peg.Up) {
                 affectedClocks[topCenter] = 1;
                 affectedClocks[middleRight] = 1;
                 affectedClocks[center] = 1;
@@ -379,10 +365,10 @@ export class Puzzle {
 
         }
 
-        if (this.pegState[pegBottom][pegLeft] === pegValue) {
+        if (pegBottomLeft === pegValue) {
             affectedClocks[bottomLeft] = 1;
 
-            if (pegValue === PegValue.Up) {
+            if (pegValue === Peg.Up) {
                 affectedClocks[bottomCenter] = 1;
                 affectedClocks[middleLeft] = 1;
                 affectedClocks[center] = 1;
@@ -393,10 +379,10 @@ export class Puzzle {
             }
         }
 
-        if (this.pegState[pegBottom][pegRight] === pegValue) {
+        if (pegBottomRight === pegValue) {
             affectedClocks[bottomRight] = 1;
 
-            if (pegValue === PegValue.Up) {
+            if (pegValue === Peg.Up) {
                 affectedClocks[bottomCenter] = 1;
                 affectedClocks[middleRight] = 1;
                 affectedClocks[center] = 1;
@@ -412,22 +398,24 @@ export class Puzzle {
     }
 
     public makeMove(move: Move): Puzzle {
-        const { wheel, direction, pegState = this.pegState } = move;
+        const { wheel, direction, pegState } = move;
         // do nothing for impossible puzzle moves
+        const [pegTopLeft, pegTopRight, pegBottomLeft, pegBottomRight] = pegState;
+
         if (
-            (pegState[pegTop][pegLeft] === PegValue.Up) &&
-            (pegState[pegTop][pegRight] === PegValue.Up) &&
-            (pegState[pegBottom][pegLeft] === PegValue.Up) &&
-            (pegState[pegTop][pegRight] === PegValue.Up) &&
+            (pegTopLeft === Peg.Up) &&
+            (pegTopRight === Peg.Up) &&
+            (pegBottomLeft === Peg.Up) &&
+            (pegBottomRight === Peg.Up) &&
             (wheel === Wheel.Lower)
         ) {
             // Lower turn when all sides are Up
             return this;
         } else if (
-            (pegState[pegTop][pegLeft] === PegValue.Down) &&
-            (pegState[pegTop][pegRight] === PegValue.Down) &&
-            (pegState[pegBottom][pegLeft] === PegValue.Down) &&
-            (pegState[pegTop][pegRight] === PegValue.Down) &&
+            (pegTopLeft === Peg.Down) &&
+            (pegTopRight === Peg.Down) &&
+            (pegBottomLeft === Peg.Down) &&
+            (pegBottomRight === Peg.Down) &&
             (wheel === Wheel.Upper)
         ) {
             // Upper turn when all sides are Down
@@ -436,9 +424,7 @@ export class Puzzle {
 
         let updatedMoves = [...this.moves, move];
 
-        this._pegState = copyPegState(pegState);
-
-        let affectedClocks = this.getAffectedClocks(wheel);
+        let affectedClocks = this.getAffectedClocks(wheel, pegState);
 
         let newPuzzleState = this.puzzleState.map((face, index) => {
             if (affectedClocks[index] !== 0) {
@@ -450,7 +436,6 @@ export class Puzzle {
 
         return new Puzzle(
             newPuzzleState,
-            pegState,
             updatedMoves,
         )
     }
@@ -501,8 +486,8 @@ export const availableMoves = getAvailableMoves();
 export function getAllPegStates() {
     let allPegStates: PegState[] = [];
 
-    const pegValues = [PegValue.Up, PegValue.Down];
-    let pegState = [[PegValue.Up, null], [PegValue.Up, null]]
+    const pegValues = [Peg.Up, Peg.Down];
+    let pegState = [[Peg.Up, null], [Peg.Up, null]]
     let pegIndexes = [
         [0, 0],
         [0, 1],
@@ -514,12 +499,12 @@ export function getAllPegStates() {
         pegValues.forEach((pegValueTopRight) => {
             pegValues.forEach((pegValueBottomLeft) => {
                 pegValues.forEach((pegValueBottomRight) => {
-                    let pegState = copyPegState(defaultPegState);
-
-                    pegState[pegTop][pegLeft] = pegValueTopLeft;
-                    pegState[pegTop][pegRight] = pegValueTopRight;
-                    pegState[pegBottom][pegLeft] = pegValueBottomLeft;
-                    pegState[pegBottom][pegRight] = pegValueBottomRight;
+                    let pegState = [
+                        pegValueTopLeft,
+                        pegValueTopRight,
+                        pegValueBottomLeft,
+                        pegValueBottomRight,
+                    ] as PegState;
 
                     allPegStates.push(pegState);
                 });
@@ -610,21 +595,21 @@ export function solvePuzzle(puzzle: Puzzle): Puzzle {
     return currentPuzzle;
 }
 
-        // indexes
-        const topLeft = 0;
-        const topCenter = 1;
-        const topRight = 2;
-        const middleLeft = 3;
-        const center = 4;
-        const middleRight = 5;
-        const bottomLeft = 6;
-        const bottomCenter = 7;
-        const bottomRight = 8;
-        const backTopCenter = 9;
-        const backMiddleLeft = 10;
-        const backCenter = 11;
-        const backMiddleRight = 12;
-        const backBottomCenter = 13;
+// indexes
+const topLeft = 0;
+const topCenter = 1;
+const topRight = 2;
+const middleLeft = 3;
+const center = 4;
+const middleRight = 5;
+const bottomLeft = 6;
+const bottomCenter = 7;
+const bottomRight = 8;
+const backTopCenter = 9;
+const backMiddleLeft = 10;
+const backCenter = 11;
+const backMiddleRight = 12;
+const backBottomCenter = 13;
 
 // used to get the back value for corners
 function getBackValue(value: ClockFace): ClockFace {
@@ -633,4 +618,31 @@ function getBackValue(value: ClockFace): ClockFace {
     }
 
     return 12 - value;
+}
+
+export function toNotation(moves: Move[]): any[] {
+    let movesCounter = new Map<string, number>();
+    let movesList: any[] = [];
+
+    moves.forEach((move) => {
+        let moveString = JSON.stringify(move);
+        let count = movesCounter.get(moveString) || 0;
+
+        movesCounter.set(moveString, count + 1);
+    });
+
+    // TODO filter out moves that cancel each other out
+
+    movesCounter.forEach((count, move)  => {
+        const { pegState, wheel, direction } = JSON.parse(move);
+        let turnString = `${count}${(direction === Direction.Clockwise ? '+' : '-')}`;
+        let obj = {
+            pegState,
+            wheel: wheel === Wheel.Upper ? 'U' : 'D',
+            turn: turnString,
+        }
+        movesList.push(obj);
+    });
+
+    return movesList;
 }

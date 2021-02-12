@@ -1,4 +1,4 @@
-import { Move, availableMoves, PuzzleState, solvePuzzle, getAllPegStates, ClockFace, Puzzle, Peg, PegState, PegValue, match, turnClock, Direction, Wheel } from '../src/clock';
+import { toNotation, Move, availableMoves, PuzzleState, PuzzleStateFlat, solvePuzzle, getAllPegStates, ClockFace, Puzzle, PegState, Peg, match, turnClock, Direction, Wheel } from '../src/clock';
 
 describe('Puzzle', () => {
     describe('.isSolved', () => {
@@ -13,18 +13,6 @@ describe('Puzzle', () => {
             expect(puzzle.isSolved).toBe(false);
         });
     });
-
-    describe('pegState', () => {
-        it('should not mutate', () => {
-            let puzzle = new Puzzle();
-            puzzle.pegState[0][0] = PegValue.Down;
-            // should be unchanged
-            expect(puzzle.pegState).toEqual([
-                [PegValue.Up, PegValue.Up],
-                [PegValue.Up, PegValue.Up],
-            ])
-        })
-    })
 
     describe('.score', () => {
         it('should be x, y, z', () => {
@@ -48,46 +36,13 @@ describe('Puzzle', () => {
         })
     })
 
-    describe('.setPegs', () => {
-        it('should be dd, dd', () => {
-            let puzzle = new Puzzle();
-            let newPegState: PegState = [
-                [PegValue.Down, PegValue.Down],
-                [PegValue.Down, PegValue.Down],
-            ]
-            puzzle = puzzle.setPegs(newPegState);
-            expect(puzzle.pegState).toEqual(newPegState)
-        })
-
-        it('should be dU, Ud', () => {
-            let puzzle = new Puzzle();
-            let newPegState: PegState = [
-                [PegValue.Down, PegValue.Up],
-                [PegValue.Up, PegValue.Down],
-            ]
-            puzzle = puzzle.setPegs(newPegState);
-            expect(puzzle.pegState).toEqual(newPegState)
-        })
-
-        it('should be Ud, Ud', () => {
-            let puzzle = new Puzzle();
-            let newPegState: PegState = [
-                [PegValue.Up, PegValue.Down],
-                [PegValue.Up, PegValue.Down],
-            ]
-            puzzle = puzzle.setPegs(newPegState);
-            expect(puzzle.pegState).toEqual(newPegState)
-        })
-
-    });
-
     describe('.makeMove', () => {
         it('Ud, dd Upper should move the topLeft clockFace', () => {
             let puzzle = new Puzzle();
 
             const pegState: PegState = [
-                [PegValue.Up, PegValue.Down],
-                [PegValue.Down, PegValue.Down],
+                Peg.Up, Peg.Down,
+                Peg.Down, Peg.Down,
             ];
             const move = {
                 wheel: Wheel.Upper,
@@ -117,8 +72,8 @@ describe('Puzzle', () => {
         it('UU, UU Lower should do nothing and return same obj', () => {
             let puzzle = new Puzzle();
             let pegState = [
-                [PegValue.Up, PegValue.Up],
-                [PegValue.Up,PegValue.Up]
+                Peg.Up, Peg.Up,
+                Peg.Up, Peg.Up
             ] as PegState;
             let newPuzzle = puzzle.makeMove({ wheel: Wheel.Lower, direction: Direction.Clockwise, pegState });
 
@@ -128,8 +83,8 @@ describe('Puzzle', () => {
         it('dd, dd Upper should do nothing and return same obj', () => {
             let puzzle = new Puzzle();
             let pegState: PegState = [
-                [PegValue.Down, PegValue.Down],
-                [PegValue.Down, PegValue.Down],
+                Peg.Down, Peg.Down,
+                Peg.Down, Peg.Down,
             ]
 
             let newPuzzle = puzzle.makeMove(
@@ -203,31 +158,31 @@ describe('getAffectedClocks', () => {
 
     it('UU, UU, Wheel.Upper', () => {
         let puzzle = new Puzzle();
+        let pegState: PegState = [Peg.Up, Peg.Up, Peg.Up, Peg.Up];
+        let affectedClocks = puzzle.getAffectedClocks(Wheel.Upper, pegState);
 
-        let affectedClocks = puzzle.getAffectedClocks(Wheel.Upper);
-
-        expect(affectedClocks).toEqual([1, 1, 1, 1, 1, 1, 1, 1 , 1, 0, 0, 0, 0, 0])
+        expect(affectedClocks).toEqual([1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0])
     });
 
     it('dU, UU, Wheel.Lower', () => {
         let puzzle = new Puzzle();
-        puzzle = puzzle.setPegs([
-            [PegValue.Down, PegValue.Up],
-            [PegValue.Up, PegValue.Up]
-        ] as PegState)
+        let pegState = [
+            Peg.Down, Peg.Up,
+            Peg.Up, Peg.Up
+        ] as PegState
 
-        let affectedClocks = puzzle.getAffectedClocks(Wheel.Lower);
+        let affectedClocks = puzzle.getAffectedClocks(Wheel.Lower, pegState);
 
         expect(affectedClocks).toEqual([1, 0, 0, 0, 0, 0, 0, 0, 0, -1, -1, -1, 0, 0])
     })
 
     it('dU, UU, Wheel.Upper', () => {
         let puzzle = new Puzzle();
-        puzzle = puzzle.setPegs([
-                [PegValue.Down, PegValue.Up],
-                [PegValue.Up, PegValue.Up]
-            ] as PegState)
-        let affectedClocks = puzzle.getAffectedClocks(Wheel.Upper);
+        let pegState = [
+            Peg.Down, Peg.Up,
+            Peg.Up, Peg.Up
+        ] as PegState
+        let affectedClocks = puzzle.getAffectedClocks(Wheel.Upper, pegState);
 
         expect(affectedClocks).toEqual([0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0]);
     })
@@ -235,26 +190,26 @@ describe('getAffectedClocks', () => {
     it('dd, dd Wheel.Lower', () => {
         let puzzle = new Puzzle();
 
-        puzzle = puzzle.setPegs([
-            [PegValue.Down, PegValue.Down],
-            [PegValue.Down, PegValue.Down]
-        ] as PegState);
+        let pegState = [
+            Peg.Down, Peg.Down,
+            Peg.Down, Peg.Down
+        ] as PegState;
 
-        let affectedClocks = puzzle.getAffectedClocks(Wheel.Lower);
+        let affectedClocks = puzzle.getAffectedClocks(Wheel.Lower, pegState);
 
         expect(affectedClocks).toEqual([1, 0, 1, 0, 0, 0, 1, 0, 1, -1, -1, -1, -1, -1])
     })
 
     it('Ud, Ud', () => {
         let puzzle = new Puzzle();
-        puzzle = puzzle.setPegs([
-            [PegValue.Up, PegValue.Down],
-            [PegValue.Up, PegValue.Down]
-        ] as PegState)
+        let pegState = [
+            Peg.Up, Peg.Down,
+            Peg.Up, Peg.Down
+        ] as PegState;
 
-        let affectedClocks = puzzle.getAffectedClocks(Wheel.Upper);
+        let affectedClocks = puzzle.getAffectedClocks(Wheel.Upper, pegState);
 
-        expect(affectedClocks).toEqual([1, 1, 0, 1, 1, 0, 1, 1, 0, 0, 0, 0 ,0, 0])
+        expect(affectedClocks).toEqual([1, 1, 0, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0])
     })
 
 })
@@ -265,7 +220,7 @@ describe('getAllPegStates', () => {
     })
 })
 
-describe('solvePuzzle', () => {
+describe.only('solvePuzzle', () => {
     it('should work with an already solved puzzle', () => {
         let puzzle = new Puzzle();
 
@@ -296,8 +251,8 @@ describe('solvePuzzle', () => {
                 wheel: Wheel.Upper,
                 direction: Direction.Clockwise,
                 pegState: [
-                    [ PegValue.Up, PegValue.Up ],
-                    [ PegValue.Up, PegValue.Up ]
+                    Peg.Up, Peg.Up,
+                    Peg.Up, Peg.Up,
                 ]
             }
         ])
@@ -326,32 +281,32 @@ describe('solvePuzzle', () => {
                 wheel: Wheel.Lower,
                 direction: Direction.Clockwise,
                 pegState: [
-                    [ PegValue.Down, PegValue.Up ],
-                    [ PegValue.Up, PegValue.Up ]
+                    Peg.Down, Peg.Up,
+                    Peg.Up, Peg.Up,
                 ]
             },
             {
                 wheel: Wheel.Upper,
                 direction: Direction.CounterClockwise,
                 pegState: [
-                    [ PegValue.Up, PegValue.Up ],
-                    [ PegValue.Up, PegValue.Up ]
+                    Peg.Up, Peg.Up,
+                    Peg.Up, Peg.Up,
                 ]
             },
             {
                 wheel: Wheel.Upper,
                 direction: Direction.CounterClockwise,
                 pegState: [
-                    [ PegValue.Up, PegValue.Up ],
-                    [ PegValue.Up, PegValue.Up ]
+                    Peg.Up, Peg.Up,
+                    Peg.Up, Peg.Up
                 ]
             },
             {
                 wheel: Wheel.Upper,
                 direction: Direction.CounterClockwise,
                 pegState: [
-                    [ PegValue.Up, PegValue.Up ],
-                    [ PegValue.Up, PegValue.Up ]
+                    Peg.Up, Peg.Up,
+                    Peg.Up, Peg.Up
                 ]
             }
         ])
@@ -370,8 +325,30 @@ describe('solvePuzzle', () => {
         expect(puzzle.isSolved).toBe(true);
     })
 
+    it.only('should work with a specified puzzle ', () => {
+        // UR2+ DR3- DL3- UL1- U6+ R6+ D3- L4+ ALL0+ y2 U3+ R6+ D3+ L2+ ALL1- UR DL
+        let puzzle = new Puzzle([
+            [
+                [2, 10, 11],
+                [7, 1, 11],
+                [4, 10, 10]
+            ],
+            [
+                [10, 5, 1],
+                [8, 8, 3],
+                [8, 1, 2],
+            ]
+        ])
 
-    it.only('should work with an unsolved puzzle multiple moves away', () => {
+        puzzle = solvePuzzle(puzzle);
+
+        expect(puzzle.isSolved).toBe(true);
+        console.log(JSON.stringify(toNotation(puzzle.moves)));
+    })
+
+
+
+    it('should work with an unsolved puzzle multiple moves away', () => {
         let puzzle = new Puzzle();
 
         let nMoves = Math.floor(5 + Math.random() * 12);
@@ -385,12 +362,23 @@ describe('solvePuzzle', () => {
         console.log(`${puzzle.moves.length} moves to solve ${moves.length} moves`);
     })
 
+    it('should work with a random puzzle', () => {
+        let puzzleState = Array<ClockFace>(14) as PuzzleStateFlat;
+        for (let i = 0; i < puzzleState.length; i += 1) {
+            puzzleState[i] = Math.floor(1 + Math.random() * 12);
+        }
+
+        let puzzle = new Puzzle(puzzleState);
+        puzzle = solvePuzzle(puzzle);
+        expect(puzzle.isSolved).toBe(true);
+    })
+
 })
 
 function getRandomMoves(nMoves: number): Move[] {
     let moves = new Array<Move>(nMoves);
     // randomly grab nMoves moves
-    for (let i=0; i < nMoves; i += 1) {
+    for (let i = 0; i < nMoves; i += 1) {
         let randomIndex = Math.floor(Math.random() * availableMoves.length);
         let newMove = availableMoves[randomIndex];
         moves[i] = newMove;

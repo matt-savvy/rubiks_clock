@@ -50,23 +50,15 @@ type ClockStateFlat<T> = [T, T, T, T, T, T, T, T, T, T, T, T, T, T]
 -- rolling priority queue and seenStates together
   -- e.g we maybe will end up evaluating a state that we've seen before, but the Puzzle we're looking at got there with less
   moves than the Puzzle with the same seenState we already have in our set
-  --
+  -- is this possible?
 
 -- end game tables
   - calculate all the positions that are 1, 2, 3, and maybe even 4 moves away from being solved, precalculate all of them
   - the same way we check "is puzzle solved?" we can also check "is the state in the solved states list?"
 
---- humanizeMoves
-  - make a map of all the pegStates
-    - each maps a stringified peg state to UL, UR, DL, DR, U, L, D, R or ALL
+---
   - put moves together so that maybe four turns in the same direction could just be written UUUd, U+4
-
-
-
   */
-
-
-
 //
 
 // symmetrical states?
@@ -77,9 +69,6 @@ type ClockStateFlat<T> = [T, T, T, T, T, T, T, T, T, T, T, T, T, T]
       // same with up and down
       // same with front / back / and wheels
 
-// convert pegState to a flat list
-// remove pegStates and setPegStates (for now, might want this back for a front end but doubt it. Front end can
-// handle what states the pegs are in and just pass those with any Moves
 
 type AffectedClocks = ClockState<boolean>;
 export type PuzzleState = ClockState<ClockFace>;
@@ -138,13 +127,9 @@ export function turnClock(face: ClockFace, direction: Direction = Direction.Cloc
 }
 
 export type Move = {
+    pegState: PegState
     wheel: Wheel,
     direction: Direction,
-    pegState: PegState
-}
-export type SolveStep = {
-    puzzle: Puzzle,
-    move: Move, // move to get from the last state to this state
 }
 
 function copyPuzzleState(puzzleState: PuzzleState): PuzzleState {
@@ -203,8 +188,8 @@ export class Puzzle {
         if (moves.length) {
             this._moves = [...moves];
         }
-        this._score = this.calculateScore();
 
+        this._score = this.calculateScore();
     }
 
     public get puzzleState(): PuzzleStateFlat {
@@ -242,7 +227,7 @@ export class Puzzle {
             [
                 [backTopLeft, backTopCenter, backTopRight],
                 [backMiddleLeft, backCenter, backMiddleRight],
-                [backBottomLeft, bottomCenter, backBottomRight],
+                [backBottomLeft, backBottomCenter, backBottomRight],
             ]
         ]
     }
@@ -293,14 +278,6 @@ export class Puzzle {
 
     public get moves(): Move[] {
         return [...this._moves];
-    }
-
-    public get lastMove(): Move | null {
-        if (this._moves.length) {
-            return this._moves[this._moves.length - 1];
-        }
-
-        return null
     }
 
     // TODO
@@ -365,31 +342,33 @@ export class Puzzle {
 
         }
 
+
         if (pegBottomLeft === pegValue) {
             affectedClocks[bottomLeft] = 1;
 
             if (pegValue === Peg.Up) {
-                affectedClocks[bottomCenter] = 1;
                 affectedClocks[middleLeft] = 1;
                 affectedClocks[center] = 1;
+                affectedClocks[bottomCenter] = 1;
             } else {
+                affectedClocks[backCenter] = -1;
                 affectedClocks[backMiddleLeft] = -1;
-                affectedClocks[backCenter] = 1;
-                affectedClocks[backBottomCenter] = 1;
+                affectedClocks[backBottomCenter] = -1;
             }
         }
+
 
         if (pegBottomRight === pegValue) {
             affectedClocks[bottomRight] = 1;
 
             if (pegValue === Peg.Up) {
-                affectedClocks[bottomCenter] = 1;
-                affectedClocks[middleRight] = 1;
                 affectedClocks[center] = 1;
+                affectedClocks[middleRight] = 1;
+                affectedClocks[bottomCenter] = 1;
             } else {
-                affectedClocks[backBottomCenter] = -1;
                 affectedClocks[backCenter] = -1;
                 affectedClocks[backMiddleRight] = -1;
+                affectedClocks[backBottomCenter] = -1;
             }
 
         }
@@ -399,9 +378,11 @@ export class Puzzle {
 
     public makeMove(move: Move): Puzzle {
         const { wheel, direction, pegState } = move;
-        // do nothing for impossible puzzle moves
+
         const [pegTopLeft, pegTopRight, pegBottomLeft, pegBottomRight] = pegState;
 
+        // do nothing for impossible puzzle moves
+        // Lower turn when all sides are Up
         if (
             (pegTopLeft === Peg.Up) &&
             (pegTopRight === Peg.Up) &&
@@ -409,7 +390,6 @@ export class Puzzle {
             (pegBottomRight === Peg.Up) &&
             (wheel === Wheel.Lower)
         ) {
-            // Lower turn when all sides are Up
             return this;
         } else if (
             (pegTopLeft === Peg.Down) &&
@@ -467,9 +447,9 @@ function getAvailableMoves(): Move[] {
         wheels.forEach((wheel) => {
             directions.forEach((direction) => {
                 let move = {
+                    pegState,
                     wheel,
                     direction,
-                    pegState,
                 }
 
                 availableMoves.push(move);
@@ -620,29 +600,52 @@ function getBackValue(value: ClockFace): ClockFace {
     return 12 - value;
 }
 
-export function toNotation(moves: Move[]): any[] {
-    let movesCounter = new Map<string, number>();
-    let movesList: any[] = [];
+
+export function pegStateToNotation(pegState: PegState): string {
+    return ''
+}
+
+
+function getMoveCounter(moves: Move[]): Map<string, number> {
+    let moveCounter = new Map<string, number>();
 
     moves.forEach((move) => {
         let moveString = JSON.stringify(move);
-        let count = movesCounter.get(moveString) || 0;
+        let count = moveCounter.get(moveString) || 0;
 
-        movesCounter.set(moveString, count + 1);
+        moveCounter.set(moveString, count + 1);
+    });
+    return moveCounter
+}
+
+export function reverseMoves(moves: Move[]): Move[] {
+    return moves.map((move) => {
+        let reversedMove = JSON.parse(JSON.stringify(move)) as Move;
+        reversedMove.direction *= -1
+        return reversedMove
+    })
+}
+
+type NotationMove = string
+
+export function toNotation(moves: Move[]): NotationMove[] {
+
+    let moveCounter = getMoveCounter(moves);
+    let notationMoves: NotationMove[] = [];
+
+    moveCounter.forEach((count, move)  => {
+        const { pegState, wheel, direction } = JSON.parse(move) as Move;
+        let turnNotation = `${count}${(direction === Direction.Clockwise ? '+' : '-')}`;
+
+        let wheelNotation = wheel === Wheel.Upper ? 'U' : 'D';
+        let [topLeft, topRight, bottomLeft, bottomRight] = pegState.map((peg) => peg === Peg.Up ? 'U' : 'd');
+        let pegStateSplit = [[topLeft, topRight].join(''), [bottomLeft, bottomRight].join('')];
+
+        let notationMove = [pegStateSplit, wheelNotation, turnNotation].join(' ');
+
+        notationMoves.push(notationMove);
     });
 
-    // TODO filter out moves that cancel each other out
+    return notationMoves;
 
-    movesCounter.forEach((count, move)  => {
-        const { pegState, wheel, direction } = JSON.parse(move);
-        let turnString = `${count}${(direction === Direction.Clockwise ? '+' : '-')}`;
-        let obj = {
-            pegState,
-            wheel: wheel === Wheel.Upper ? 'U' : 'D',
-            turn: turnString,
-        }
-        movesList.push(obj);
-    });
-
-    return movesList;
 }

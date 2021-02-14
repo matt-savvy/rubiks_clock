@@ -1,3 +1,5 @@
+import { PriorityQueue } from "./priority";
+
 export enum ClockFace {
     One = 1,
     Two,
@@ -58,7 +60,26 @@ type ClockStateFlat<T> = [T, T, T, T, T, T, T, T, T, T, T, T, T, T]
 
 ---
   - put moves together so that maybe four turns in the same direction could just be written UUUd, U+4
+
+
+    - fibonacci queue that includes the set of puzzles so the solvePuzzle mechanism doesn't need to determine
+    if it or a symmetrical state has seen before?
+
+    -
+
+    - figure a way to get a single score instead of needing a compare function
+      - 0 on the front, 6 on the back might be very different than 3, 3, might not
+      - maybe back cross distance gets doubled
+
+
+
+--- react front end
+
+
+
   */
+
+
 //
 
 // symmetrical states?
@@ -68,6 +89,7 @@ type ClockStateFlat<T> = [T, T, T, T, T, T, T, T, T, T, T, T, T, T]
       // reversing something L-R means that the pins that were up and down will switch
       // same with up and down
       // same with front / back / and wheels
+
 
 
 type AffectedClocks = ClockState<boolean>;
@@ -475,15 +497,14 @@ export function getAllPegStates() {
         [1, 1]
     ]
 
+    // TODO clean this up
     pegValues.forEach((pegValueTopLeft) => {
         pegValues.forEach((pegValueTopRight) => {
             pegValues.forEach((pegValueBottomLeft) => {
                 pegValues.forEach((pegValueBottomRight) => {
                     let pegState = [
-                        pegValueTopLeft,
-                        pegValueTopRight,
-                        pegValueBottomLeft,
-                        pegValueBottomRight,
+                        pegValueTopLeft, pegValueTopRight,
+                        pegValueBottomLeft, pegValueBottomRight,
                     ] as PegState;
 
                     allPegStates.push(pegState);
@@ -501,26 +522,92 @@ function getMinMax(score: Score): [number, number] {
     return [min, max];
 }
 
-function prioritizePuzzleQueue(puzzleQueue: Puzzle[]): Puzzle[] {
-    return puzzleQueue.sort((a, b) => {
+function nodeCompareFn(a, b) {
+    return comparePuzzles(a.value, b.value);
+}
 
-        const [minCrossA, maxCrossA] = getMinMax(a.score);
-        const [minCrossB, maxCrossB] = getMinMax(b.score);
+function comparePuzzles3(a: Puzzle, b: Puzzle): number {
+    return a.moves.length - b.moves.length;
+}
 
-        if (minCrossA !== minCrossB) {
-            return minCrossA < minCrossB ? -1 : 1;
-        }
+function comparePuzzles(a: Puzzle, b: Puzzle): number {
+    const [minCrossA, maxCrossA] = getMinMax(a.score);
+    const [minCrossB, maxCrossB] = getMinMax(b.score);
 
-        if (maxCrossA !== maxCrossB) {
-            return maxCrossA < maxCrossB ? -1 : 1;
-        }
+    if (minCrossA !== minCrossB) {
+        return minCrossA - minCrossB;
+    }
 
-        return a.score.corners < b.score.corners ? -1 : 1;
-    })
+    if (maxCrossA !== maxCrossB) {
+        return maxCrossA - maxCrossB;
+    }
+
+    if (a.score.corners !== b.score.corners) {
+        return a.score.corners - b.score.corners;
+    }
+
+    return a.moves.length - b.moves.length;
+}
+
+function comparePuzzles2(a: Puzzle, b: Puzzle): number {
+    let scoreA = getScore(a);
+    let scoreB = getScore(b);
+
+    // they are both just as close, go with the lesser moves
+    if (scoreA === scoreB) {
+        return a.moves.length - b.moves.length;
+    }
+
+    return scoreA - scoreB;
+}
+
+/** Swaps last item with its parent until it's no longer the best score */
+function prioritizePuzzles<PrioritizeFn>(puzzles: Puzzle[]): Puzzle[] {
+
+    function getParentIndex(index: number): number {
+        return Math.round(index / 2) - 1;
+    }
+
+    let currentIndex = puzzles.length - 1
+    let parentIndex = getParentIndex(currentIndex);
+
+    // do this while the current item has a better score than its parent and
+    // we still have a parent
+    while (
+        (parentIndex >= 0) &&
+        (comparePuzzles(puzzles[currentIndex], puzzles[parentIndex]) < 0)
+    ) {
+        // swap places
+        let currentPuzzle = puzzles[currentIndex];
+        let parentPuzzle = puzzles[parentIndex]
+        puzzles[parentIndex] = currentPuzzle;
+        puzzles[currentIndex] = parentPuzzle;
+
+        currentIndex = parentIndex;
+        parentIndex = getParentIndex(currentIndex);
+    }
+
+    return puzzles
+}
+
+function prioritizeFn(puzzles: (null | Puzzle) []): (null | Puzzle)[] {
+    let cleanedPuzzles = puzzles.filter((puzzle) => !!puzzle) as Puzzle[];
+
+    return cleanedPuzzles.sort(comparePuzzles);
 }
 
 function isUnseenPuzzle(puzzle: Puzzle, seenStates: Set<string>): boolean {
     return seenStates.has(puzzle.puzzleStateString) === false;
+}
+
+function getScore(puzzle: Puzzle): number {
+    let [minCross, maxCross] = getMinMax(puzzle.score);
+
+    let faceDifferences = Math.abs(puzzle.puzzleState[center] - puzzle.puzzleState[backCenter]);
+
+    let cornerScore = puzzle.score.corners;
+
+    return minCross + maxCross + faceDifferences + cornerScore
 }
 
 export function solvePuzzle(puzzle: Puzzle): Puzzle {
@@ -528,49 +615,42 @@ export function solvePuzzle(puzzle: Puzzle): Puzzle {
         return puzzle;
     }
 
-    let puzzleQueue: Puzzle[] = [puzzle]
+    let puzzleQueue = new PriorityQueue<Puzzle>([puzzle], nodeCompareFn);
     let seenStates = new Set<string>();
     let currentPuzzle = puzzle;
 
-    let counter = 0;
+    let counter = 0; // TODO remove
 
     while (puzzleQueue.length) {
-        counter += 1;
         currentPuzzle = puzzleQueue.shift() as Puzzle;
 
         seenStates.add(currentPuzzle.puzzleStateString);
 
-        if (counter < 2 ** 12) {
+        if (counter < 2 ** 17) {
+            counter += 1;
             let nextPuzzles = currentPuzzle.getNextPuzzles();
-
+            // use for and not forEach here so we can immediately if we hit a solve
             for (let i = 0; i < nextPuzzles.length; i += 1) {
                 let nextPuzzle = nextPuzzles[i];
 
                 if (nextPuzzle.isSolved) {
                     // we're done here
-                    // console.log(`solved after looking at ${counter} positions`);
+                    console.log(`solved after looking at ${counter} positions`);
                     return nextPuzzle;
                 };
 
                 if (isUnseenPuzzle(nextPuzzle, seenStates)) {
-                    puzzleQueue.push(nextPuzzle);
+                    counter += 1;
+
+                    puzzleQueue.insert(nextPuzzle);
                 }
 
             }
 
-            // resort queue
-            let startTime = performance.now();
-            puzzleQueue = prioritizePuzzleQueue(puzzleQueue);
-            let endTime = performance.now();
-            if (endTime - startTime > 1) {
-                // console.log(`puzzleQueue.length ${puzzleQueue.length}, time: ${endTime - startTime}ms`);
-            }
-
-
         }
     }
 
-    console.log('could not solved, counter', counter);
+    console.log('could not solved, counter', counter );
 
     return currentPuzzle;
 }

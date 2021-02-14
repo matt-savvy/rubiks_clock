@@ -223,7 +223,7 @@ describe('getAllPegStates', () => {
     })
 })
 
-describe('solvePuzzle', () => {
+describe.only('solvePuzzle', () => {
     it('should work with an already solved puzzle', () => {
         let puzzle = new Puzzle();
 
@@ -264,14 +264,14 @@ describe('solvePuzzle', () => {
     it('should work with an unsolved puzzle three moves away', () => {
         let puzzle = new Puzzle([
             [
-                [2, 3, 3],
-                [3, 3, 3],
-                [3, 3, 3],
+                [9, 9, 9],
+                [9, 9, 9],
+                [9, 9, 9],
             ],
             [
-                [10, 1, 9],
-                [1, 1, 12],
-                [9, 12, 9],
+                [3, 12, 3],
+                [12, 12, 12],
+                [3, 12, 3],
             ]
         ]);
 
@@ -281,24 +281,16 @@ describe('solvePuzzle', () => {
 
         expect(puzzle.moves).toEqual([
             {
-                wheel: Wheel.Lower,
+                wheel: Wheel.Upper,
                 direction: Direction.Clockwise,
                 pegState: [
-                    Peg.Down, Peg.Up,
-                    Peg.Up, Peg.Up,
-                ]
-            },
-            {
-                wheel: Wheel.Upper,
-                direction: Direction.CounterClockwise,
-                pegState: [
                     Peg.Up, Peg.Up,
                     Peg.Up, Peg.Up,
                 ]
             },
             {
                 wheel: Wheel.Upper,
-                direction: Direction.CounterClockwise,
+                direction: Direction.Clockwise,
                 pegState: [
                     Peg.Up, Peg.Up,
                     Peg.Up, Peg.Up
@@ -306,7 +298,7 @@ describe('solvePuzzle', () => {
             },
             {
                 wheel: Wheel.Upper,
-                direction: Direction.CounterClockwise,
+                direction: Direction.Clockwise,
                 pegState: [
                     Peg.Up, Peg.Up,
                     Peg.Up, Peg.Up
@@ -328,7 +320,7 @@ describe('solvePuzzle', () => {
         expect(puzzle.isSolved).toBe(true);
     })
 
-    it.only('should work with a specified puzzle ', () => {
+    it('should work with a specified puzzle ', () => {
         // UR2+ DR3- DL3- UL1- U6+ R6+ D3- L4+ y2 U3+ R6+ D3+ L2+ ALL1- UR DL
         let puzzleState = [
             [
@@ -362,11 +354,11 @@ describe('solvePuzzle', () => {
         console.log(toNotation(puzzle.moves));
     })
 
-    it('should work with an unsolved random puzzle multiple moves away', () => {
+    it.only('should work with an unsolved random puzzle multiple moves away', () => {
         let puzzleToScramble = new Puzzle();
 
         // how many moves will we apply to generate our scramble
-        let nMoves = Math.floor(5 + Math.random() * 12);
+        let nMoves = Math.floor(5 + Math.random() * 24);
         // create a random sequence
         let moves = getRandomMoves(nMoves);
 
@@ -382,10 +374,12 @@ describe('solvePuzzle', () => {
         // create a new instance to solve so we don't have a move history
         let puzzle = new Puzzle(scrambledState);
 
+        const start = performance.now();
         puzzle = solvePuzzle(puzzle);
+        const end = performance.now();
         expect(puzzle.isSolved).toBe(true);
 
-        // console.log(`${puzzle.moves.length} moves to solve ${moves.length} moves`);
+        console.log(`${puzzle.moves.length} moves to solve ${moves.length} moves, ${end - start} ms`);
         // console.log(puzzle.moves);
         // create a new instance and reapply the same moves
         let puzzle2 = new Puzzle(scrambledState);

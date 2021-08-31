@@ -196,6 +196,7 @@ export class Puzzle {
     private _puzzleState: PuzzleStateFlat;
     private _moves: Move[] = [];
     private _score: Score;
+    private _newScore: number;
 
     constructor(
         puzzleState: PuzzleStateFlat | PuzzleState = solvedStateFlat,
@@ -212,6 +213,7 @@ export class Puzzle {
         }
 
         this._score = this.calculateScore();
+        this._newScore = this.calculateNewScore();
     }
 
     public get puzzleState(): PuzzleStateFlat {
@@ -257,8 +259,45 @@ export class Puzzle {
         return this._puzzleState.toString()
     }
 
-    public get score(): Score {
-        return this._score;
+    public get score(): number {
+        return this._newScore + this.moves.length;
+    }
+
+    private calculateNewScore(): number {
+        let score = 0;
+
+        const frontEdges = [topCenter, middleLeft, middleRight, bottomCenter];
+        const centerFace = this._puzzleState[center];
+        let frontCrossScore = 0;
+        frontEdges.forEach((stateIndex) => {
+            let face = this._puzzleState[stateIndex];
+            let distance = Math.abs(centerFace - face);
+            frontCrossScore += distance;
+        });
+
+        const backEdges = [backTopCenter, backMiddleLeft, backMiddleRight, backBottomCenter];
+        const backCenterFace = this._puzzleState[backCenter];
+        let backCrossScore = 0;
+        backEdges.forEach((stateIndex) => {
+            let face = this._puzzleState[stateIndex];
+            let distance = Math.abs(backCenterFace - face);
+            backCrossScore += distance;
+        });
+
+        const corners = [topLeft, topRight, bottomLeft, bottomRight];
+        let cornerScore = 0;
+        corners.forEach((stateIndex) => {
+            let face = this._puzzleState[stateIndex];
+            let distance = Math.abs(centerFace - face);
+            cornerScore += distance;
+        });
+
+        let crosses = [frontCrossScore, backBottomCenter].sort()
+        score += crosses[0];
+        score += crosses[1] * 1.5; // weight the second cross score by 1.5
+        score += cornerScore * 2; // weight the corners by 2
+
+        return score
     }
 
     private calculateScore(): Score {
@@ -296,7 +335,6 @@ export class Puzzle {
 
         return score
     }
-
 
     public get moves(): Move[] {
         return [...this._moves];
@@ -523,14 +561,12 @@ function getMinMax(score: Score): [number, number] {
 }
 
 function nodeCompareFn(a, b) {
-    return comparePuzzles(a.value, b.value);
+    return a.value.score - b.value.score
+    // return comparePuzzles(a.value, b.value);
 }
 
-function comparePuzzles3(a: Puzzle, b: Puzzle): number {
-    return a.moves.length - b.moves.length;
-}
-
-function comparePuzzles(a: Puzzle, b: Puzzle): number {
+/*
+export function comparePuzzles(a: Puzzle, b: Puzzle): number {
     const [minCrossA, maxCrossA] = getMinMax(a.score);
     const [minCrossB, maxCrossB] = getMinMax(b.score);
 
@@ -548,66 +584,11 @@ function comparePuzzles(a: Puzzle, b: Puzzle): number {
 
     return a.moves.length - b.moves.length;
 }
+*/
 
-function comparePuzzles2(a: Puzzle, b: Puzzle): number {
-    let scoreA = getScore(a);
-    let scoreB = getScore(b);
-
-    // they are both just as close, go with the lesser moves
-    if (scoreA === scoreB) {
-        return a.moves.length - b.moves.length;
-    }
-
-    return scoreA - scoreB;
-}
-
-/** Swaps last item with its parent until it's no longer the best score */
-function prioritizePuzzles<PrioritizeFn>(puzzles: Puzzle[]): Puzzle[] {
-
-    function getParentIndex(index: number): number {
-        return Math.round(index / 2) - 1;
-    }
-
-    let currentIndex = puzzles.length - 1
-    let parentIndex = getParentIndex(currentIndex);
-
-    // do this while the current item has a better score than its parent and
-    // we still have a parent
-    while (
-        (parentIndex >= 0) &&
-        (comparePuzzles(puzzles[currentIndex], puzzles[parentIndex]) < 0)
-    ) {
-        // swap places
-        let currentPuzzle = puzzles[currentIndex];
-        let parentPuzzle = puzzles[parentIndex]
-        puzzles[parentIndex] = currentPuzzle;
-        puzzles[currentIndex] = parentPuzzle;
-
-        currentIndex = parentIndex;
-        parentIndex = getParentIndex(currentIndex);
-    }
-
-    return puzzles
-}
-
-function prioritizeFn(puzzles: (null | Puzzle) []): (null | Puzzle)[] {
-    let cleanedPuzzles = puzzles.filter((puzzle) => !!puzzle) as Puzzle[];
-
-    return cleanedPuzzles.sort(comparePuzzles);
-}
 
 function isUnseenPuzzle(puzzle: Puzzle, seenStates: Set<string>): boolean {
     return seenStates.has(puzzle.puzzleStateString) === false;
-}
-
-function getScore(puzzle: Puzzle): number {
-    let [minCross, maxCross] = getMinMax(puzzle.score);
-
-    let faceDifferences = Math.abs(puzzle.puzzleState[center] - puzzle.puzzleState[backCenter]);
-
-    let cornerScore = puzzle.score.corners;
-
-    return minCross + maxCross + faceDifferences + cornerScore
 }
 
 export function solvePuzzle(puzzle: Puzzle): Puzzle {
@@ -615,18 +596,19 @@ export function solvePuzzle(puzzle: Puzzle): Puzzle {
         return puzzle;
     }
 
-    let puzzleQueue = new PriorityQueue<Puzzle>([puzzle], nodeCompareFn);
+    let puzzleQueue = new PriorityQueue<Puzzle>();
     let seenStates = new Set<string>();
-    let currentPuzzle = puzzle;
+    puzzleQueue.insert(puzzle.score, puzzle);
+    let currentPuzzle;
 
     let counter = 0; // TODO remove
 
-    while (puzzleQueue.length) {
-        currentPuzzle = puzzleQueue.shift() as Puzzle;
+    while (puzzleQueue.size) {
+        currentPuzzle = puzzleQueue.extractMin() as Puzzle;
 
         seenStates.add(currentPuzzle.puzzleStateString);
 
-        if (counter < 2 ** 17) {
+        if (counter < 2 ** 18) {
             counter += 1;
             let nextPuzzles = currentPuzzle.getNextPuzzles();
             // use for and not forEach here so we can immediately if we hit a solve
@@ -642,11 +624,9 @@ export function solvePuzzle(puzzle: Puzzle): Puzzle {
                 if (isUnseenPuzzle(nextPuzzle, seenStates)) {
                     counter += 1;
 
-                    puzzleQueue.insert(nextPuzzle);
+                    puzzleQueue.insert(nextPuzzle.score, nextPuzzle);
                 }
-
             }
-
         }
     }
 

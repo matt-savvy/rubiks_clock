@@ -223,7 +223,7 @@ describe('getAllPegStates', () => {
     })
 })
 
-describe.only('solvePuzzle', () => {
+describe('solvePuzzle', () => {
     it('should work with an already solved puzzle', () => {
         let puzzle = new Puzzle();
 
